@@ -90,12 +90,13 @@ knitr::kable(beskrivande_stat, caption = "Tabell 3: Antal och andel röster per 
 
            
 ```
+Med en bättre förståelse för populationen övergår vi till de olika urvalsmetoderna. Vi börjar med ett obundet slumpmässigt urval (OSU).
 
 # Obundet slumpmässigt urval
 
 ```{r }
 
-set.seed(1333)
+set.seed(485834)
 
 N <- nrow(valjare)
 index_osu <- sample(1:N, size = 1000)
@@ -112,9 +113,11 @@ print(osu_SD_andel)
 
 
 ```
+Skattningen av andelen SD-röstare blev 0.2425, och skattningens medelfel blev 0.0152. Vi efterstratifierar nu på kommun och skattar dessa värden igen.
+
 ```{r, efterstratifiering}
 
-set.seed(1333)
+set.seed(485834)
 
 poststratify_osu <- postStratify(design = osu_design, strata = ~Kommun, population = as.data.frame(xtabs(~Kommun, data = valjare)))
 
@@ -123,12 +126,15 @@ andel_poststratify <- svymean(x = ~SD, design = poststratify_osu, na.rm = TRUE)
 print(andel_poststratify)
 
 ```
-Varför är det (inte?) lämpligt att efterstratifiera i detta fall? 
+Med efterstratifiering blev skattningen 0.24094 och skattningensmedelfel blev 0.0148. Skattningen är lite lägre än den för OSU utan efterstratifiering.
 
-Det är inte lämpligt för att det finns ett högt antal kommuner i Skåne (33). Urvalet är endast n = 1000 och därför kan flera kommuner bli representerade av få observationer i urvalet. Då kan variansen bli högre och skattningens precision blir lägre.
+
+Det är inte lämpligt att efterstratifiera i detta fall för att det finns ett högt antal kommuner i Skåne (33). Urvalet är endast n = 1000 och därför kan flera kommuner bli representerade av få observationer i urvalet. Då kan variansen bli högre och skattningens precision blir lägre.
 
 
 # Två geografiskt stratifierade urval
+
+# Stratifierat urval med proportionell allokering
 
 ```{r 3}
 
@@ -167,7 +173,13 @@ print(p_hat_strat_prop)
 
   
 ```
+Ett stratifierat urval med proportionell allokering gav en skattning av andelen SD-röstare på 0.26184. Medelfelet på skattningen blev 0.0152. Skattningen och medelfelet är ungefär lika med OSUs skattning. 
+
+# Stratifierat urval med Neyman-allokering
+
 ```{r neyman}
+
+set.seed(485834)
 
 Nh <- xtabs(~Valkretsnamn, data = valjare)
 
@@ -202,7 +214,7 @@ urval_neyman_strat <- valjare[index_neyman_strat,]
 
 urval_neyman_strat$N_h <- Nh[urval_neyman_strat$Valkretsnamn]
 
-design_strat_neyman <-  svydesign(id = ~1, strata = ~Valkretsnamn, fpc = ~N_h, data = urval_neyman_strat)
+design_strat_neyman <- svydesign(id = ~1, strata = ~Valkretsnamn, fpc = ~N_h, data = urval_neyman_strat)
 
 p_hat_neyman <- svymean(x = ~SD, design = design_strat_neyman, na.rm = T)
 
@@ -211,9 +223,14 @@ print(SE(p_hat_neyman))
 
 ```
 
+Ett stratifierat urval med Neyman-allokering gav en skattning på 0.25386. Skattningens medelfel är 0.015. Både skattningen och skattningens medelfel stämmer överrens med de andra urvalsmetodernas skattningar.
+
+# Systematiskt urval
+
 ```{r systematiskt urval}
 
-set.seed(55555)
+set.seed(485834)
+
 n <- 1000
 N <- nrow(valjare)
 k <- as.integer(N/n)
@@ -233,9 +250,15 @@ print(p_hat_syst)
 print(SE(p_hat_syst))
 
 ```
+
+Med ett systematiskt urval blev den skattade andelen av Skånes röstberättigade som röstade på SD 0.24485. Skattningens medelfel blev 0.01497, vilket är nära de andra medelfelen.
+
+
 # Tvåstegsurval med lika sannolikheter
 
 ```{r tvåstegsurval}
+
+set.seed(485834)
 
 gruppurval <- mstage(valjare, stage = c("cluster", ""),
                      varnames = "Valdistriktnamn", 
@@ -250,9 +273,6 @@ Mi <- xtabs(~Valdistriktskod, valjare)
 urval_grupp$Mi <- as.vector(Mi[urval_grupp$Valdistriktskod])
 urval_grupp$sue <- rep(1:20, t = 50)
 
-
-urval_grupp
-
 design_grupp <- svydesign(id = ~Valdistriktskod + sue, fpc = ~N + Mi, data = urval_grupp)
 
 p_hat_grupp <- svymean(x = ~SD, design = design_grupp, na.rm = T)
@@ -260,11 +280,14 @@ print(p_hat_grupp)
 
 ```
 
+Ett tvåstegs gruppurval med lika sannolikheter gav en skattning på 0.23821. Medelfelet blev 0.02, vilket är något högre än de andra skattningarnas medelfel.
+
+
 # Tvåstegsurval med olika sannolikheter (pps-urval)
 
 ```{r tvåstegsurval olika sannolikheter}
 
-set.seed(656000)
+set.seed(485834)
 
 pik <- inclusionprobabilities(Mi, 50)
 pue_index <- UPmultinomial(pik)
@@ -299,10 +322,15 @@ p_hat_pps <- svymean(x = ~SD, design = design_pps, na.rm = TRUE)
 print(p_hat_pps)
 
 ```
+Den sista urvalsmetoden, tvåstegs gruppurval med olika sannolikheter, skattade andelen SD-röstare på 0.23805. Skattningens medelfel blev 0.0182. 
 
+# Jämförelse
 
+# Slutlig skattning
 
 # Sammanfattning
 
 
 # AI-Redogörelse
+
+Jag (Josefine) använde Claude för att hjälpa med koden i beskrivande-statistik delen; den hjälpte mig beräkna antalet och andelen röster per parti på ett snyggt sätt med dplyr-paketet. Jag använde också Claude som en resurs när jag stötte på felkod som jag inte kunde hantera själv.
