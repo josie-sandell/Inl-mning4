@@ -1,0 +1,337 @@
+---
+title: "Inlämning 4"
+author: "Josefine Sandell och Villiam Axtelius"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(SDAResources)
+library(survey)
+library(tidyverse)
+library(knitr)
+library(sampling)
+
+```
+
+# Inledning
+
+
+```{r}
+
+valjare <- c(0,1)
+load("~/STAG36/STAG36-Inlämning-4/valjare.RData")
+
+# skapa indikatorvariabel till SD
+
+valjare$SD <- 1*(valjare$Parti == "Sverigedemokraterna")
+
+kable(xtabs(~Valkretsnamn, data = valjare), caption = "Tabell 1: Valkretsar i Skåne")
+
+
+```
+
+Det finns fyra olikavalkretsar i Skåne. Namnen och antalet röstberättigade i varje valkrets redovisas i tabell 1.
+
+```{r}
+
+length(unique(valjare$Kommun)) # antalet kommuner
+
+kable(xtabs(~Kommun, data = valjare), caption = "Tabell 2: Kommuner i Skåne") #tabell på kommunernas antal röstberättigade
+
+```
+Det finns 33 kommuner. Antalet röstberättigade i varje kommun presenteras i tabell 2.
+
+
+```{r}
+
+kable(aggregate(Valdistriktnamn ~ Kommun, data = valjare,
+          FUN = function(x) length(unique(x))), caption = "Tabell 3: Valdistrikter") 
+
+```
+
+Kommunen med minst antal röstberättigade är Perstorp.
+
+```{r beskriv pop, eval=FALSE, include=FALSE}
+
+# GÖR KLART SENARE
+
+aggregate(SD ~ Valkretskod, data = valjare,
+          FUN = function(x) length(unique(x)))
+
+summary(valjare$SD)
+
+
+plot <- ggplot(valjare, aes(Valkretsnamn, SD)) +
+  geom_col(na.rm = T) +
+  geom_density2d()
+
+plot
+
+table(valjare$SD)
+
+barplot(valjare$Valkretsnamn, valjare$
+        SD)
+
+
+plot + scale_fill_discrete(name = "Legend", labels(c(1,7)))
+
+andel_SD_per_valkrets <- valjare %>%
+  group_by(Valkretsnamn) %>%
+  drop_na() %>%
+  summarize(andel = mean(SD) * 100)
+
+# to do: beräkna andelen SD väljare i varje valkrets
+
+andel_SD_per_valkrets
+
+frek_tab <- table(valjare$Valkretsnamn, valjare$SD)
+
+prop.table(frek_tab, margin = 1) * 100
+
+frek_tab
+
+```
+
+
+```{r}
+
+beskrivande_stat <- 
+  valjare %>% 
+  count(Parti, name = "antal") %>%
+  mutate(andel = antal/sum(antal) * 100,
+         grupp = if_else(andel < 1, "Övriga", Parti)) %>%
+  group_by(grupp) %>%
+  summarize(antal = sum(antal), .groups = "drop") %>%
+  arrange(desc(antal))
+
+
+beskrivande_stat
+
+ggplot(beskrivande_stat, aes(grupp, antal)) +
+  geom_col() +
+  coord_flip()
+
+```
+
+
+# Obundet slumpmässigt urval
+
+
+
+```{r }
+
+set.seed(1333)
+
+N <- nrow(valjare)
+index_osu <- sample(1:N, size = 1000)
+urval_osu <- valjare[index_osu, ]
+
+urval_osu$N <- N
+
+osu_design <- svydesign(id = ~1, 
+                            fpc = ~N, data = urval_osu)
+
+osu_SD_andel <- svymean(x = ~SD, design = osu_design, na.rm = TRUE)
+
+print(osu_SD_andel)
+
+
+```
+```{r, efterstratifiering}
+
+set.seed(1333)
+
+poststratify_osu <- postStratify(design = osu_design, strata = ~Kommun, population = as.data.frame(xtabs(~Kommun, data = valjare)))
+
+andel_poststratify <- svymean(x = ~SD, design = poststratify_osu, na.rm = TRUE)
+
+print(andel_poststratify)
+
+```
+Varför är det (inte?) lämpligt att efterstratifiera i detta fall? 
+
+Det är inte lämpligt för att det finns ett högt antal kommuner i Skåne (33). Urvalet är endast n = 1000 och därför kan flera kommuner bli representerade av få observationer i urvalet. Då kan variansen bli högre och skattningens precision blir lägre.
+
+
+# Två geografiskt stratifierade urval
+
+```{r 3}
+
+set.seed(485834)
+
+N <- nrow(valjare)
+n <- 1000
+
+# notes: ange fpc i surveydesignen
+
+Nh <- xtabs(~Valkretsnamn, data = valjare)
+
+nh <- round(Nh / (N * n))
+
+sum(nh) # blev inte 1000; justerar manuellt
+
+nh["Skåne läns södra"] <- nh["Skåne läns södra"] + 1
+
+nh <- c("Malmö kommun" = 243, "Skåne läns norra och östra" = 237, "Skåne läns södra" = 291, "Skåne läns västra" = 229)
+
+index_strat <- stratsample(valjare$Valkretsnamn, counts = nh)
+
+urval_strat <- valjare[index_strat, ]
+
+urval_strat$Nh <- Nh[urval_strat$Valkretsnamn]
+
+
+design_strat <- svydesign(id = ~1, strata = ~Valkretsnamn, fpc = ~Nh, data = urval_strat)
+
+
+# skatta andelen SD-väljare med proportionell allokering
+
+p_hat_strat_prop <- svymean(x = ~SD, design = design_strat, na.rm = T)
+
+print(p_hat_strat_prop)
+
+  
+```
+```{r neyman}
+
+Nh <- xtabs(~Valkretsnamn, data = valjare)
+
+# neyman allokering
+
+valkrets_SD_stats <- valjare %>%
+  group_by(Valkretsnamn) %>%
+  drop_na() %>%
+  summarize(
+    p_h = mean(SD),
+    sd_h = sd(SD),
+    .groups = "drop"
+  )
+
+n <- 1000
+
+neyman_strata <- valkrets_SD_stats %>%
+  mutate(
+    Nh_sh = Nh * sd_h,
+    n_h = round(n * Nh_sh / sum(Nh_sh))
+  )
+
+neyman_strata$n_h
+
+n_h <- c("Malmö kommun" = 211, "Skåne läns norra och östra" = 259, "Skåne läns södra" = 287, "Skåne läns västra" = 243)
+
+sum(n_h) # kontrollera att n = 1000
+
+index_neyman_strat <- stratsample(valjare$Valkretsnamn, counts = n_h)
+
+urval_neyman_strat <- valjare[index_neyman_strat,]
+
+urval_neyman_strat$N_h <- Nh[urval_neyman_strat$Valkretsnamn]
+
+design_strat_neyman <-  svydesign(id = ~1, strata = ~Valkretsnamn, fpc = ~N_h, data = urval_neyman_strat)
+
+p_hat_neyman <- svymean(x = ~SD, design = design_strat_neyman, na.rm = T)
+
+print(p_hat_neyman)
+print(SE(p_hat_neyman))
+
+```
+
+```{r systematiskt urval}
+
+set.seed(55555)
+n <- 1000
+N <- nrow(valjare)
+k <- as.integer(N/n)
+R <- sample(1:k, size = 1)
+
+index_syst <- seq(from = R, to = N, by = k)
+
+urval_syst <- valjare[index_syst, ]
+
+urval_syst$N <- N
+
+syst_design <- svydesign(id =~1, fpc = ~N, data = urval_syst)
+
+p_hat_syst <- svymean(x = ~SD, design = syst_design, na.rm = T)
+
+print(p_hat_syst)
+print(SE(p_hat_syst))
+
+```
+# Tvåstegsurval med lika sannolikheter
+
+```{r tvåstegsurval}
+
+gruppurval <- mstage(valjare, stage = c("cluster", ""),
+                     varnames = "Valdistriktnamn", 
+                     size = list(50, rep(20, 50)),
+                     method = c("srswor", "srswor"))
+
+index_grupp <- gruppurval[[2]]$ID_unit
+
+urval_grupp <- valjare[index_grupp,]
+urval_grupp$N <- length(unique(valjare$Valdistriktskod))
+Mi <- xtabs(~Valdistriktskod, valjare)
+urval_grupp$Mi <- as.vector(Mi[urval_grupp$Valdistriktskod])
+urval_grupp$sue <- rep(1:20, t = 50)
+
+
+urval_grupp
+
+design_grupp <- svydesign(id = ~Valdistriktskod + sue, fpc = ~N + Mi, data = urval_grupp)
+
+p_hat_grupp <- svymean(x = ~SD, design = design_grupp, na.rm = T)
+print(p_hat_grupp)
+
+```
+
+# Tvåstegsurval med olika sannolikheter (pps-urval)
+
+```{r tvåstegsurval olika sannolikheter}
+
+set.seed(656000)
+
+pik <- inclusionprobabilities(Mi, 50)
+pue_index <- UPmultinomial(pik)
+pps_pue <- data.frame(ID_pue = 1:50,
+                      Valdistriktskod = getdata(unique(valjare$Valdistriktskod),
+                                                pue_index))
+
+valjare_pps <- merge(x = pps_pue, y = valjare, by = "Valdistriktskod")
+
+index_pps <- strata(valjare_pps,
+                    stratanames = "ID_pue",
+                    size = rep(20, 50),
+                    method = "srswor")
+
+urval_pps <- valjare_pps[index_pps$ID_unit,]
+
+
+names(pik) <- unique(valjare$Valdistriktskod)
+urval_pps$pik_h <- pik[urval_pps$Valdistriktskod]
+
+urval_pps$Mi <- as.vector(Mi[urval_pps$Valdistriktskod])
+urval_pps$wt <- 1 / (50 * urval_pps$pik_h * (20 / urval_pps$Mi))
+
+design_pps <- svydesign(
+  id      = ~Valdistriktskod + ID_pue,
+  weight  = ~wt,
+  data    = urval_pps
+)
+
+p_hat_pps <- svymean(x = ~SD, design = design_pps, na.rm = TRUE)
+
+print(p_hat_pps)
+
+```
+
+
+
+# Sammanfattning
+
+
+# AI-Redogörelse
