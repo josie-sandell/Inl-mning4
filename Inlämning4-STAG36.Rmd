@@ -19,11 +19,16 @@ library(sampling)
 
 # Inledning
 
+Att välja en urvalsmetod är en viktig del av undersökningsdesign. Urvalsmetoden påverkar skattningens väntevärdesriktighet, precision, och bias, och vissa metoder är mer lämpliga än andra beroende på populationens egenskaper och undersökningens begränsningar. I denna rapport undersöker vi hur 1 032 182 röstberättigade röstade i Skåne under riksdagsvalet 2022. Vi använder 6 olika urvalsmetoder för att skatta andelen SD-röstare i Skåne: Obundet slumpmässigt urval (OSU), stratifierat urval med proportionell allokering, stratifierat urval med Neyman-allokering, systematiskt urval, tvåstegsurval med lika sannolikheter och tvåstegsurval med olika sannolikheter. Vi avslutar med att jämföra de olika metoderna och välja ett sätt att skatta resten av riksdagspartiernas röstandeler med.
+
+# Lär känna populationen
 
 ```{r}
 
 valjare <- c(0,1)
 load("~/STAG36/STAG36-Inlämning-4/valjare.RData")
+N <- nrow(valjare)
+print(N) # antalet röstberättigade i Skåne, inklusive NAs
 
 # skapa indikatorvariabel till SD
 
@@ -46,7 +51,7 @@ kable(xtabs(~Kommun, data = valjare), caption = "Tabell 2: Kommuner i Skåne") #
 Det finns 33 kommuner. Antalet röstberättigade i varje kommun presenteras i tabell 2.
 
 
-```{r}
+```{r valdistriker}
 
 kable(aggregate(Valdistriktnamn ~ Kommun, data = valjare,
           FUN = function(x) length(unique(x))), caption = "Tabell 3: Valdistrikter") 
@@ -55,72 +60,38 @@ kable(aggregate(Valdistriktnamn ~ Kommun, data = valjare,
 
 Kommunen med minst antal röstberättigade är Perstorp.
 
-```{r beskriv pop, eval=FALSE, include=FALSE}
 
-# GÖR KLART SENARE
-
-aggregate(SD ~ Valkretskod, data = valjare,
-          FUN = function(x) length(unique(x)))
-
-summary(valjare$SD)
-
-
-plot <- ggplot(valjare, aes(Valkretsnamn, SD)) +
-  geom_col(na.rm = T) +
-  geom_density2d()
-
-plot
-
-table(valjare$SD)
-
-barplot(valjare$Valkretsnamn, valjare$
-        SD)
-
-
-plot + scale_fill_discrete(name = "Legend", labels(c(1,7)))
-
-andel_SD_per_valkrets <- valjare %>%
-  group_by(Valkretsnamn) %>%
-  drop_na() %>%
-  summarize(andel = mean(SD) * 100)
-
-# to do: beräkna andelen SD väljare i varje valkrets
-
-andel_SD_per_valkrets
-
-frek_tab <- table(valjare$Valkretsnamn, valjare$SD)
-
-prop.table(frek_tab, margin = 1) * 100
-
-frek_tab
-
-```
-
-
-```{r}
+```{r beskrivande statistik}
 
 beskrivande_stat <- 
   valjare %>% 
   count(Parti, name = "antal") %>%
   mutate(andel = antal/sum(antal) * 100,
-         grupp = if_else(andel < 1, "Övriga", Parti)) %>%
-  group_by(grupp) %>%
-  summarize(antal = sum(antal), .groups = "drop") %>%
+         Parti = if_else(andel < 1, "Övriga", Parti)) %>%
+  group_by(Parti) %>%
+  summarize(antal = sum(antal), 
+            .groups = "drop") %>%
+    mutate(andel = antal / sum(antal) * 100) %>%  
   arrange(desc(antal))
 
-
-beskrivande_stat
-
-ggplot(beskrivande_stat, aes(grupp, antal)) +
+ggplot(beskrivande_stat, aes(Parti, antal)) +
   geom_col() +
-  coord_flip()
+  coord_flip() +
+  labs(title = "Figur 1: Stapeldiagram med antal röster per parti") +
+  ylab("Antal Röster")
 
 ```
 
+Figur 1 visar att den populäraste partiet var Socialdemokraterna (S), följt av Sverigedemokraterna (SD) och sedan Moderaterna (M). En stor andel röstberättigade röstade inte alls (NA). Andelen av Skånes befolkning som röstar på vardena parti ges i tabell 3.
+
+```{r andel per parti}
+
+knitr::kable(beskrivande_stat, caption = "Tabell 3: Antal och andel röster per parti")
+
+           
+```
 
 # Obundet slumpmässigt urval
-
-
 
 ```{r }
 
